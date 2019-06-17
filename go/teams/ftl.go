@@ -9,6 +9,7 @@ import (
 	"github.com/keybase/client/go/gregor"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/protocol/keybase1"
+	"github.com/keybase/client/go/sig3"
 	"github.com/keybase/client/go/teams/hidden"
 	storage "github.com/keybase/client/go/teams/storage"
 )
@@ -552,10 +553,11 @@ type shoppingList struct {
 
 // groceries are what we get back from the server.
 type groceries struct {
-	newLinks     []*ChainLinkUnpacked
-	rkms         []keybase1.ReaderKeyMask
-	latestKeyGen keybase1.PerTeamKeyGeneration
-	seeds        []keybase1.PerTeamKeySeed
+	newLinks       []*ChainLinkUnpacked
+	rkms           []keybase1.ReaderKeyMask
+	latestKeyGen   keybase1.PerTeamKeyGeneration
+	seeds          []keybase1.PerTeamKeySeed
+	newHiddenLinks []sig3.ExportJSON
 }
 
 // isEmpty returns true if our shopping list is empty. In this case, we have no need to go to the
@@ -786,13 +788,14 @@ func (f *FastTeamChainLoader) loadFromServerOnce(m libkb.MetaContext, arg fastLo
 		}
 	}
 
-	m.Debug("loadFromServerOnce: got back %d new links; %d stubbed; %d RKMs; %d prevs; box=%v; lastSecretGen=%d", len(links), numStubbed, len(teamUpdate.ReaderKeyMasks), len(teamUpdate.Prevs), teamUpdate.Box != nil, lastSecretGen)
+	m.Debug("loadFromServerOnce: got back %d new links; %d stubbed; %d RKMs; %d prevs; box=%v; lastSecretGen=%d; %d hidden chainlinks", len(links), numStubbed, len(teamUpdate.ReaderKeyMasks), len(teamUpdate.Prevs), teamUpdate.Box != nil, lastSecretGen, len(teamUpdate.HiddenChain))
 
 	return &groceries{
-		newLinks:     links,
-		latestKeyGen: lastSecretGen,
-		rkms:         teamUpdate.ReaderKeyMasks,
-		seeds:        seeds,
+		newLinks:       links,
+		latestKeyGen:   lastSecretGen,
+		rkms:           teamUpdate.ReaderKeyMasks,
+		seeds:          seeds,
+		newHiddenLinks: teamUpdate.HiddenChain,
 	}, nil
 }
 
