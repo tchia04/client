@@ -674,13 +674,13 @@ func (a fastLoadArg) toHTTPArgs(s shoppingList) libkb.HTTPArgs {
 // needed for the team chain. There is a race possible, when a link is added between the two. In that
 // case, refetch in a loop until we match up. It will retry in the case of GreenLinkErrors. If
 // the given state was fresh already, then we'll return a nil groceries.
-func (f *FastTeamChainLoader) loadFromServerWithRetries(m libkb.MetaContext, arg fastLoadArg, state *keybase1.FastTeamData, shoppingList shoppingList) (groceries *groceries, err error) {
+func (f *FastTeamChainLoader) loadFromServerWithRetries(m libkb.MetaContext, arg fastLoadArg, state *keybase1.FastTeamData, shoppingList shoppingList, hp *hidden.LoaderPackage) (groceries *groceries, err error) {
 
 	defer m.Trace(fmt.Sprintf("FastTeamChainLoader#loadFromServerWithRetries(%s,%v)", arg.ID, arg.Public), func() error { return err })()
 
 	const nRetries = 3
 	for i := 0; i < nRetries; i++ {
-		groceries, err = f.loadFromServerOnce(m, arg, state, shoppingList)
+		groceries, err = f.loadFromServerOnce(m, arg, state, shoppingList, hp)
 		switch err.(type) {
 		case nil:
 			return groceries, nil
@@ -716,7 +716,7 @@ func (f *FastTeamChainLoader) makeHTTPRequest(m libkb.MetaContext, args libkb.HT
 // we previously read. If we find a green link, we retry in our caller. Otherwise, we also do the
 // key decryption here, decrypting the most recent generation, and all prevs we haven't previously
 // decrypted.
-func (f *FastTeamChainLoader) loadFromServerOnce(m libkb.MetaContext, arg fastLoadArg, state *keybase1.FastTeamData, shoppingList shoppingList) (ret *groceries, err error) {
+func (f *FastTeamChainLoader) loadFromServerOnce(m libkb.MetaContext, arg fastLoadArg, state *keybase1.FastTeamData, shoppingList shoppingList, hp *hidden.LoaderPackage) (ret *groceries, err error) {
 
 	defer m.Trace("FastTeamChainLoader#loadFromServerOnce", func() error { return err })()
 
@@ -726,14 +726,21 @@ func (f *FastTeamChainLoader) loadFromServerOnce(m libkb.MetaContext, arg fastLo
 	var links []*ChainLinkUnpacked
 	var lastSecretGen keybase1.PerTeamKeyGeneration
 	var seeds []keybase1.PerTeamKeySeed
+	var harg *libkb.LookupTeamHiddenArg
+	var hiddenIsFresh bool
 
-	lastSeqno, lastLinkID, err = f.world.merkleLookup(m.Ctx(), arg.ID, arg.Public)
+	harg, err = hp.MerkleLoadArg(m)
+	if err != nil {
+		return nil, err
+	}
+
+	lastSeqno, lastLinkID, hiddenIsFresh, err = f.world.merkleLookupWithHidden(m.Ctx(), arg.ID, arg.Public, harg)
 
 	if err != nil {
 		return nil, err
 	}
 
-	if shoppingList.onlyNeedsRefresh() && state != nil && state.Chain.Last != nil && state.Chain.Last.Seqno == lastSeqno {
+	if shoppingList.onlyNeedsRefresh() && state != nil && state.Chain.Last != nil && state.Chain.Last.Seqno == lastSeqno && hiddenIsFresh {
 		if !lastLinkID.Eq(state.Chain.Last.LinkID) {
 			m.Debug("link ID mismatch at tail seqno %d: wanted %s but got %s", state.Chain.Last.LinkID, lastLinkID)
 			return nil, NewFastLoadError("cached last link at seqno=%d did not match current merke tree", lastSeqno)
@@ -1241,7 +1248,12 @@ func (f *FastTeamChainLoader) refresh(m libkb.MetaContext, arg fastLoadArg, stat
 
 	defer m.Trace(fmt.Sprintf("FastTeamChainLoader#refresh(%+v)", arg), func() error { return err })()
 
-	groceries, err := f.loadFromServerWithRetries(m, arg, state, shoppingList)
+	hp, err := f.hiddenPackage(m, arg, state)
+	if err != nil {
+		return nil, err
+	}
+
+	groceries, err := f.loadFromServerWithRetries(m, arg, state, shoppingList, hp)
 	if err != nil {
 		return nil, err
 	}
