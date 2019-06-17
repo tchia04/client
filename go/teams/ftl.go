@@ -9,6 +9,7 @@ import (
 	"github.com/keybase/client/go/gregor"
 	"github.com/keybase/client/go/libkb"
 	"github.com/keybase/client/go/protocol/keybase1"
+	"github.com/keybase/client/go/teams/hidden"
 	storage "github.com/keybase/client/go/teams/storage"
 )
 
@@ -1214,6 +1215,22 @@ func makeState(arg fastLoadArg, s *keybase1.FastTeamData) *keybase1.FastTeamData
 			MerkleInfo:              make(map[keybase1.Seqno]keybase1.MerkleRootV2),
 		},
 	}
+}
+
+func (f *FastTeamChainLoader) hiddenPackage(m libkb.MetaContext, arg fastLoadArg, state *keybase1.FastTeamData) (hp *hidden.LoaderPackage, err error) {
+	defer m.Trace(fmt.Sprintf("FastTeamChainLoader#hiddenPackage(%+v)", arg), func() error { return err })()
+	return hidden.NewLoaderPackage(m, arg.ID,
+		func() (encKID keybase1.KID, gen keybase1.PerTeamKeyGeneration, err error) {
+			if state == nil || len(state.Chain.PerTeamKeys) == 0 {
+				return encKID, gen, nil
+			}
+			var ptk keybase1.PerTeamKey
+			for _, tmp := range state.Chain.PerTeamKeys {
+				ptk = tmp
+				break
+			}
+			return ptk.EncKID, ptk.Gen, nil
+		})
 }
 
 // refresh the team's state, but loading with the server. It will download new stubbed chainlinks,

@@ -21,12 +21,25 @@ type LoaderPackage struct {
 	isFresh      bool
 }
 
-// NewLoaderPackage creates an object used to load the hidden team chain along with the
+func NewLoaderPackage(mctx libkb.MetaContext, id keybase1.TeamID, getter func() (keybase1.KID, keybase1.PerTeamKeyGeneration, error)) (ret *LoaderPackage, err error) {
+	encKID, gen, err := getter()
+	if err != nil {
+		return nil, err
+	}
+	ret = newLoaderPackage(id, encKID, gen)
+	err = ret.Load(mctx)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+// newLoaderPackage creates an object used to load the hidden team chain along with the
 // slow or fast team loader. It manages internal state during the loading process. Pass an
 // encryption KID from the main chain for authentication purposes, that we can prove to the server
 // that we've previously seen data for this team (and therefor we're allowed to know whether or not
 // the team has a hidden chain (but nothing more)).
-func NewLoaderPackage(id keybase1.TeamID, e keybase1.KID, g keybase1.PerTeamKeyGeneration) *LoaderPackage {
+func newLoaderPackage(id keybase1.TeamID, e keybase1.KID, g keybase1.PerTeamKeyGeneration) *LoaderPackage {
 	return &LoaderPackage{id: id, encKID: e, encKIDGen: g, isFresh: true}
 }
 
