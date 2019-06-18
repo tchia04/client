@@ -874,7 +874,7 @@ func (d *Service) runBackgroundBoxAuditScheduler() {
 	})
 }
 
-func (d *Service) OnLogin(mctx libkb.MetaContext) error {
+func (d *Service) OnLogin(mctx libkb.MetaContext) (err error) {
 	d.rekeyMaster.Login()
 	if err := d.gregordConnect(); err != nil {
 		return err
@@ -885,6 +885,7 @@ func (d *Service) OnLogin(mctx libkb.MetaContext) error {
 		d.G().PushShutdownHook(func() error { return d.stopChatModules(mctx) })
 		d.runTLFUpgrade()
 		go d.identifySelf()
+		go d.prefetchHasRandomPW(uid)
 	}
 	return nil
 }
@@ -1302,4 +1303,21 @@ func (d *Service) StartStandaloneChat(g *libkb.GlobalContext) error {
 	d.startChatModules()
 
 	return nil
+}
+
+func (d *Service) prefetchHasRandomPW(uid keybase1.UID) {
+	mctx := d.MetaContext(context.Background())
+	arg := keybase1.LoadHasRandomPwArg{
+		ForUID: &uid,
+		// We don't want to force repoll if there's cache, but we can also wait
+		// longer than few seconds.
+		ForceRepoll:    false,
+		NoShortTimeout: true,
+	}
+	randomPW, err := libkb.LoadHasRandomPw(mctx, arg)
+	if err != nil {
+		mctx.Debug("Prefetching HasRandomPW failed: %s", err)
+	} else {
+		mctx.Debug("Prefetching HasRandomPW, result is HasRandomPW=%t", randomPW)
+	}
 }
