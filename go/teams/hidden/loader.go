@@ -265,26 +265,26 @@ func (l *LoaderPackage) toHiddenTeamChain(mctx libkb.MetaContext, links []sig3.G
 	return ret, nil
 }
 
-func checkUpdateAgainstSeed(mctx libkb.MetaContext, seeds map[keybase1.PerTeamKeyGeneration]keybase1.PerTeamKeySeedItem, update keybase1.HiddenTeamChainLink) (err error) {
+func checkUpdateAgainstSeed(mctx libkb.MetaContext, getSeed func(keybase1.PerTeamKeyGeneration) *keybase1.PerTeamSeedCheck, update keybase1.HiddenTeamChainLink) (err error) {
 	readerKey, ok := update.Ptk[keybase1.PTKType_READER]
 	if !ok {
 		// No reader key found in link, so no need to check it.
 		return nil
 	}
 	gen := readerKey.Ptk.Gen
-	seed, ok := seeds[gen]
-	if !ok {
-		return NewLoaderError("seed at generation %d wasn't found", gen)
+	check := getSeed(gen)
+	if check == nil {
+		return NewLoaderError("seed check at generation %d wasn't found", gen)
 	}
-	if seed.Check == nil {
-		return NewLoaderError("seed check at generation %d was nil", gen)
-	}
-	hash, err := seed.Check.Hash()
+	hash, err := check.Hash()
 	if err != nil {
 		return err
 	}
 	if readerKey.Check.Version != keybase1.PerTeamSeedCheckVersion_V1 {
 		return NewLoaderError("can only handle seed check version 1; got %s", readerKey.Check.Version)
+	}
+	if check.Version != keybase1.PerTeamSeedCheckVersion_V1 {
+		return NewLoaderError("can only handle seed check version 1; got computed check %s", check.Version)
 	}
 	if !hash.Eq(readerKey.Check) {
 		return NewLoaderError("wrong seed check at generation %d", gen)
@@ -292,15 +292,25 @@ func checkUpdateAgainstSeed(mctx libkb.MetaContext, seeds map[keybase1.PerTeamKe
 	return nil
 }
 
+func (l *LoaderPackage) CheckUpdatesAgainstSeedsWithMap(mctx libkb.MetaContext, seeds map[keybase1.PerTeamKeyGeneration]keybase1.PerTeamKeySeedItem) (err error) {
+	return l.CheckUpdatesAgainstSeeds(mctx, func(g keybase1.PerTeamKeyGeneration) *keybase1.PerTeamSeedCheck {
+		item, ok := seeds[g]
+		if !ok {
+			return nil
+		}
+		return item.Check
+	})
+}
+
 // CheckUpdatesAgainstSeeds checks the update inside this loader package against unverified team seeds. It
 // enforces equality and will error out if not. Through this check, a client can convince itself that the
 // recent keyers knew the old keys.
-func (l *LoaderPackage) CheckUpdatesAgainstSeeds(mctx libkb.MetaContext, seeds map[keybase1.PerTeamKeyGeneration]keybase1.PerTeamKeySeedItem) (err error) {
+func (l *LoaderPackage) CheckUpdatesAgainstSeeds(mctx libkb.MetaContext, f func(keybase1.PerTeamKeyGeneration) *keybase1.PerTeamSeedCheck) (err error) {
 	if l.newData == nil {
 		return nil
 	}
 	for _, update := range l.newData.Inner {
-		err = checkUpdateAgainstSeed(mctx, seeds, update)
+		err = checkUpdateAgainstSeed(mctx, f, update)
 		if err != nil {
 			return err
 		}

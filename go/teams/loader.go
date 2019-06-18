@@ -801,7 +801,7 @@ func (l *TeamLoader) load2InnerLockedRetry(ctx context.Context, arg load2ArgT) (
 		return nil, err
 	}
 
-	err = hiddenPackage.CheckUpdatesAgainstSeeds(mctx, ret.PerTeamKeySeedsUnverified)
+	err = hiddenPackage.CheckUpdatesAgainstSeedsWithMap(mctx, ret.PerTeamKeySeedsUnverified)
 	if err != nil {
 		return nil, err
 	}
