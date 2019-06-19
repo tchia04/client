@@ -584,6 +584,9 @@ type shoppingList struct {
 	// if we send a needMerkleRefresh.
 	seedLow     keybase1.PerTeamKeyGeneration
 	generations []keybase1.PerTeamKeyGeneration
+
+	// the last hidden link we got, in case we need to download more
+	hiddenLinksSince keybase1.Seqno
 }
 
 // groceries are what we get back from the server.
@@ -660,6 +663,10 @@ func (s *shoppingList) computeFreshLoad(m libkb.MetaContext, arg fastLoadArg) {
 	s.generations = append([]keybase1.PerTeamKeyGeneration{}, arg.KeyGenerationsNeeded...)
 }
 
+func (s *shoppingList) addHiddenLow(hp *hidden.LoaderPackage) {
+	s.hiddenLinksSince = hp.LastSeqno()
+}
+
 // applicationsToString converts the list of applications to a comma-separated string.
 func applicationsToString(applications []keybase1.TeamApplication) string {
 	var tmp []string
@@ -684,7 +691,7 @@ func generationsToString(generations []keybase1.PerTeamKeyGeneration) string {
 // must be returned unstubbed, and might be in the sequence *before* `low`. We specify
 // key generations and applications, and need reader key masks for all applications
 // in the (apps X gens) cartesian product.
-func (a fastLoadArg) toHTTPArgs(s shoppingList) libkb.HTTPArgs {
+func (a fastLoadArg) toHTTPArgs(m libkb.MetaContext, s shoppingList) libkb.HTTPArgs {
 	ret := libkb.HTTPArgs{
 		"id":                  libkb.S{Val: a.ID.String()},
 		"public":              libkb.B{Val: a.Public},
@@ -703,6 +710,9 @@ func (a fastLoadArg) toHTTPArgs(s shoppingList) libkb.HTTPArgs {
 	}
 	if !a.readSubteamID.IsNil() {
 		ret["read_subteam_id"] = libkb.S{Val: a.readSubteamID.String()}
+	}
+	if tmp := hidden.CheckFeatureGateForSupport(m, a.ID, false /* isWrite */); tmp == nil {
+		ret["ftl_hidden_low"] = libkb.I{Val: int(s.hiddenLinksSince)}
 	}
 	return ret
 }
@@ -786,7 +796,7 @@ func (f *FastTeamChainLoader) loadFromServerOnce(m libkb.MetaContext, arg fastLo
 		return nil, nil
 	}
 
-	teamUpdate, err = f.makeHTTPRequest(m, arg.toHTTPArgs(shoppingList), arg.Public)
+	teamUpdate, err = f.makeHTTPRequest(m, arg.toHTTPArgs(m, shoppingList), arg.Public)
 	if err != nil {
 		f.featureFlagGate.DigestError(m, err)
 		return nil, err
@@ -1388,6 +1398,7 @@ func (f *FastTeamChainLoader) loadLocked(m libkb.MetaContext, arg fastLoadArg) (
 	} else {
 		shoppingList.computeFreshLoad(m, arg)
 	}
+	shoppingList.addHiddenLow(hp)
 
 	m.Debug("FastTeamChainLoader#loadLocked: computed shopping list: %+v", shoppingList)
 
