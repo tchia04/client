@@ -1107,22 +1107,13 @@ const refreshTrustlineAcceptedAssets = (state, {payload: {accountID}}) =>
   })
 
 const refreshTrustlinePopularAssets = () =>
-  RPCStellarTypes.localListPopularAssetsLocalRpcPromise().then(assets =>
+  // @ts-ignore error will go away after rebase
+  RPCStellarTypes.localListPopularAssetsLocalRpcPromise().then(({assets, totalCount}) =>
     WalletsGen.createSetTrustlinePopularAssets({
       assets: assets.map(asset => rpcAssetToAssetDescription(asset)),
+      totalCount,
     })
   )
-
-const humanizeError = (state, accountID, originalErrorMessage: string) =>
-  originalErrorMessage.includes('tx_insufficient_balance')
-    ? `Stellar holds 0.5 XLM per trustline, and your Lumens balance is ${
-        Constants.getAssets(state, accountID).find(
-          ({assetCode}) => assetCode === 'XLM',
-          undefined,
-          Constants.makeAssets()
-        ).balanceTotal
-      } XLM.`
-    : originalErrorMessage
 
 const addTrustline = (state, {payload: {accountID, assetID}}) => {
   const asset = state.wallets.trustline.assetMap.get(assetID, Constants.emptyTrustline)
@@ -1136,14 +1127,7 @@ const addTrustline = (state, {payload: {accountID, assetID}}) => {
       },
       Constants.addTrustlineWaitingKey(accountID, assetID)
     )
-  )
-    .then(() => [
-      WalletsGen.createRefreshTrustlineAcceptedAssets({accountID}),
-      WalletsGen.createSetTrustlineErrorMessage({errorMessage: null}),
-    ])
-    .catch(err =>
-      WalletsGen.createSetTrustlineErrorMessage({errorMessage: humanizeError(state, accountID, err.desc)})
-    )
+  ).then(() => WalletsGen.createRefreshTrustlineAcceptedAssets({accountID}))
 }
 
 const deleteTrustline = (state, {payload: {accountID, assetID}}) => {
@@ -1157,14 +1141,7 @@ const deleteTrustline = (state, {payload: {accountID, assetID}}) => {
       },
       Constants.deleteTrustlineWaitingKey(accountID, assetID)
     )
-  )
-    .then(() => [
-      WalletsGen.createRefreshTrustlineAcceptedAssets({accountID}),
-      WalletsGen.createSetTrustlineErrorMessage({errorMessage: null}),
-    ])
-    .catch(err =>
-      WalletsGen.createSetTrustlineErrorMessage({errorMessage: humanizeError(state, accountID, err.desc)})
-    )
+  ).then(() => WalletsGen.createRefreshTrustlineAcceptedAssets({accountID}))
 }
 
 let lastSearchText = ''
